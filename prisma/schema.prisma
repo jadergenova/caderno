@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String   @db.VarChar(120)
+  username     String   @unique @db.VarChar(60)
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Notebook {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  title         String    @db.VarChar(200)
+  order         Float
+  themeId       String?   @map("theme_id")
+  paperPresetId String?   @map("paper_preset_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@map("notebooks")
+}
+
+model Page {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  notebookId String    @map("notebook_id")
+  order      Float
+  background Json
+  widthMm    Float     @map("width_mm")
+  heightMm   Float     @map("height_mm")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([notebookId])
+  @@map("pages")
+}
+
+model Stroke {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  pageId      String    @map("page_id")
+  tool        String    @db.VarChar(20)
+  color       String    @db.VarChar(20)
+  baseWidth   Float     @map("base_width")
+  opacity     Float     @default(1)
+  points      Bytes
+  boundingBox Json      @map("bounding_box")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([pageId])
+  @@map("strokes")
+}
+
+model TextBox {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  pageId     String    @map("page_id")
+  x          Float     @default(0)
+  y          Float     @default(0)
+  width      Float
+  height     Float
+  text       String    @db.Text
+  fontSize   Float     @map("font_size")
+  fontFamily String    @map("font_family") @db.VarChar(60)
+  color      String    @db.VarChar(20)
+  bold       Boolean   @default(false)
+  italic     Boolean   @default(false)
+  order      Float
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([pageId])
+  @@map("textboxes")
+}
+
+model ImageObject {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  pageId    String    @map("page_id")
+  assetId   String    @map("asset_id")
+  x         Float     @default(0)
+  y         Float     @default(0)
+  width     Float
+  height    Float
+  rotation  Float     @default(0)
+  order     Float
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([pageId])
+  @@map("images")
+}
+
+model Asset {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  mimeType    String   @map("mime_type") @db.VarChar(80)
+  width       Int
+  height      Int
+  byteSize    Int      @map("byte_size")
+  storagePath String   @map("storage_path")
+  publicUrl   String   @map("public_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("assets")
+}
+
+model PdfSource {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  filename   String   @db.VarChar(255)
+  pageCount  Int      @map("page_count")
+  pages      Json
+  importedAt DateTime @default(now()) @map("imported_at")
+
+  @@index([userId])
+  @@map("pdf_sources")
+}
