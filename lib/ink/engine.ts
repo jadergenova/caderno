@@ -17,6 +17,43 @@ function midpoint(a: InkPoint, b: InkPoint): InkPoint {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
 }
 
+// Draws a full, already-completed stroke in one pass — used to replay
+// persisted strokes on page load (as opposed to the incremental drawing
+// used while a pointer is actively moving).
+export function renderStroke(
+  ctx: CanvasRenderingContext2D,
+  points: InkPoint[],
+  color: string,
+  lineWidth: number
+) {
+  if (points.length < 2) return
+
+  ctx.strokeStyle = color
+  ctx.lineWidth = lineWidth
+  ctx.lineCap = "round"
+  ctx.lineJoin = "round"
+
+  if (points.length === 2) {
+    ctx.beginPath()
+    ctx.moveTo(points[0].x, points[0].y)
+    ctx.lineTo(points[1].x, points[1].y)
+    ctx.stroke()
+    return
+  }
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const p0 = points[i - 1]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const mid1 = midpoint(p0, p1)
+    const mid2 = midpoint(p1, p2)
+    ctx.beginPath()
+    ctx.moveTo(mid1.x, mid1.y)
+    ctx.quadraticCurveTo(p1.x, p1.y, mid2.x, mid2.y)
+    ctx.stroke()
+  }
+}
+
 // Palm-rejection heuristic: a real Apple Pencil always reports pointerType
 // "pen". Touch is only allowed to draw as a fallback when no pen has been
 // seen recently, so a resting hand doesn't fight an active pen stroke.

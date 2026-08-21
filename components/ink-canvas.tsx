@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Eraser, LayoutGrid } from "lucide-react"
-import { attachInkEngine, type InkEngineHandle } from "@/lib/ink/engine"
+import { Eraser, ImagePlus, LayoutGrid, MousePointer2, Pen, Type } from "lucide-react"
+import { attachInkEngine, renderStroke, type InkEngineHandle } from "@/lib/ink/engine"
 import {
   PAGE_TEMPLATES,
   PAPER_PRESETS,
@@ -10,6 +10,20 @@ import {
   type PageTemplate,
   type PaperPreset,
 } from "@/lib/ink/page-background"
+import { get, getAllByIndex, put, remove } from "@/lib/ink/db"
+import {
+  createAsset,
+  createImageObject,
+  createStroke,
+  createTextBox,
+  type Asset,
+  type ImageObject,
+  type Page,
+  type Stroke,
+  type TextBox,
+} from "@/lib/ink/model"
+import { TextBoxView } from "@/components/text-box"
+import { ImageObjectView } from "@/components/image-object"
 
 const INK_COLORS = [
   { name: "Tinta", value: "#2a2420" },
@@ -22,13 +36,83 @@ const INK_COLORS = [
   { name: "Creme", value: "#f7f1e3" },
 ]
 
-export function InkCanvas() {
+type Tool = "pen" | "select"
+
+export function InkCanvas({ pageId }: { pageId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<InkEngineHandle | null>(null)
+  const strokesRef = useRef<Stroke[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const [color, setColor] = useState(INK_COLORS[0].value)
+  const colorRef = useRef(color)
+  colorRef.current = color
+
+  const [tool, setTool] = useState<Tool>("pen")
   const [paperPreset, setPaperPreset] = useState<PaperPreset>(PAPER_PRESETS[0])
   const [pageTemplate, setPageTemplate] = useState<PageTemplate>("ruled")
   const [pageMenuOpen, setPageMenuOpen] = useState(false)
+  const [textBoxes, setTextBoxes] = useState<TextBox[]>([])
+  const [images, setImages] = useState<{ obj: ImageObject; url: string }[]>([])
+  const [lastCreatedId, setLastCreatedId] = useState<string | null>(null)
+
+  // Load the page's saved settings, strokes, text boxes and images once.
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      const page = await get<Page>("pages", pageId)
+      if (page && !cancelled) {
+        const preset = PAPER_PRESETS.find((p) => p.id === page.paperPresetId)
+        if (preset) setPaperPreset(preset)
+        setPageTemplate((page.pageTemplate as PageTemplate) || "ruled")
+      }
+
+      const [strokes, boxes, imageObjs] = await Promise.all([
+        getAllByIndex<Stroke>("strokes", "pageId", pageId),
+        getAllByIndex<TextBox>("textboxes", "pageId", pageId),
+        getAllByIndex<ImageObject>("images", "pageId", pageId),
+      ])
+      if (cancelled) return
+
+      strokesRef.current = strokes
+      setTextBoxes(boxes)
+
+      const withUrls = await Promise.all(
+        imageObjs.map(async (obj) => {
+          const asset = await get<Asset>("assets", obj.assetId)
+          return asset ? { obj, url: URL.createObjectURL(asset.blob) } : null
+        })
+      )
+      if (!cancelled) setImages(withUrls.filter((x): x is { obj: ImageObject; url: string } => x !== null))
+
+      replayAll()
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageId])
+
+  // Revoke image object URLs when they're replaced or the page unmounts.
+  useEffect(() => {
+    return () => {
+      images.forEach((i) => URL.revokeObjectURL(i.url))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function replayAll() {
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext("2d")
+    if (!canvas || !ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    for (const s of strokesRef.current) {
+      renderStroke(ctx, s.points, s.color, s.lineWidth)
+    }
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -41,10 +125,19 @@ export function InkCanvas() {
       canvas!.width = Math.max(1, Math.round(rect.width * dpr))
       canvas!.height = Math.max(1, Math.round(rect.height * dpr))
       ctx!.scale(dpr, dpr)
+      replayAll()
     }
 
     resize()
-    const engine = attachInkEngine(canvas, { color, lineWidth: 2.5 })
+    const engine = attachInkEngine(canvas, {
+      color: colorRef.current,
+      lineWidth: 2.5,
+      onStrokeEnd: (points) => {
+        const stroke = createStroke(pageId, colorRef.current, 2.5, points)
+        strokesRef.current = [...strokesRef.current, stroke]
+        put("strokes", stroke)
+      },
+    })
     engineRef.current = engine
 
     const observer = new ResizeObserver(resize)
@@ -54,27 +147,137 @@ export function InkCanvas() {
       observer.disconnect()
       engine.destroy()
     }
-    // Engine is attached once; color updates go through the handle below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [pageId])
 
   useEffect(() => {
     engineRef.current?.setColor(color)
   }, [color])
 
+  function savePageSettings(patch: Partial<Page>) {
+    get<Page>("pages", pageId).then((page) => {
+      if (page) put("pages", { ...page, ...patch, updatedAt: Date.now() })
+    })
+  }
+
+  function updateTextBox(id: string, patch: Partial<TextBox>) {
+    setTextBoxes((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+  }
+
+  function commitTextBox(id: string) {
+    setTextBoxes((prev) => {
+      const box = prev.find((t) => t.id === id)
+      if (box) put("textboxes", { ...box, updatedAt: Date.now() })
+      return prev
+    })
+  }
+
+  function deleteTextBox(id: string) {
+    setTextBoxes((prev) => prev.filter((t) => t.id !== id))
+    remove("textboxes", id)
+  }
+
+  function addTextBox() {
+    const n = textBoxes.length
+    const box = createTextBox(pageId, 40 + (n % 5) * 24, 40 + (n % 5) * 24)
+    setTextBoxes((prev) => [...prev, box])
+    put("textboxes", box)
+    setLastCreatedId(box.id)
+    setTool("select")
+  }
+
+  function updateImage(id: string, patch: Partial<ImageObject>) {
+    setImages((prev) => prev.map((i) => (i.obj.id === id ? { ...i, obj: { ...i.obj, ...patch } } : i)))
+  }
+
+  function commitImage(id: string) {
+    setImages((prev) => {
+      const entry = prev.find((i) => i.obj.id === id)
+      if (entry) put("images", { ...entry.obj, updatedAt: Date.now() })
+      return prev
+    })
+  }
+
+  function deleteImage(id: string) {
+    setImages((prev) => {
+      const entry = prev.find((i) => i.obj.id === id)
+      if (entry) URL.revokeObjectURL(entry.url)
+      return prev.filter((i) => i.obj.id !== id)
+    })
+    remove("images", id)
+  }
+
+  async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+
+    const bitmap = await createImageBitmap(file)
+    const maxWidth = 240
+    const scale = Math.min(1, maxWidth / bitmap.width)
+    const width = Math.round(bitmap.width * scale)
+    const height = Math.round(bitmap.height * scale)
+
+    const asset = createAsset(file)
+    await put("assets", asset)
+
+    const n = images.length
+    const obj = createImageObject(pageId, asset.id, 60 + (n % 4) * 30, 60 + (n % 4) * 30, width, height)
+    await put("images", obj)
+
+    setImages((prev) => [...prev, { obj, url: URL.createObjectURL(file) }])
+    setTool("select")
+  }
+
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0.9rem",
+        overflow: "hidden",
+        ...pageBackgroundStyle(paperPreset, pageTemplate),
+      }}
+    >
+      {images.map(({ obj, url }) => (
+        <ImageObjectView
+          key={obj.id}
+          image={obj}
+          src={url}
+          interactive={tool === "select"}
+          onChange={updateImage}
+          onCommit={commitImage}
+          onDelete={deleteImage}
+        />
+      ))}
+
+      {textBoxes.map((tb) => (
+        <TextBoxView
+          key={tb.id}
+          textBox={tb}
+          interactive={tool === "select"}
+          autoFocus={tb.id === lastCreatedId}
+          onChange={updateTextBox}
+          onCommit={commitTextBox}
+          onDelete={deleteTextBox}
+        />
+      ))}
+
       <canvas
         ref={canvasRef}
         style={{
-          ...pageBackgroundStyle(paperPreset, pageTemplate),
+          position: "absolute",
+          inset: 0,
           width: "100%",
           height: "100%",
+          background: "transparent",
           touchAction: "none",
-          borderRadius: "0.9rem",
-          display: "block",
+          pointerEvents: tool === "pen" ? "auto" : "none",
         }}
       />
+
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileSelected} style={{ display: "none" }} />
 
       {/* Page settings */}
       <div style={{ position: "absolute", top: "1rem", right: "1rem" }}>
@@ -106,6 +309,7 @@ export function InkCanvas() {
               padding: "0.9rem",
               display: "grid",
               gap: "0.9rem",
+              zIndex: 10,
             }}
           >
             <div style={{ display: "grid", gap: "0.4rem" }}>
@@ -114,7 +318,10 @@ export function InkCanvas() {
                 {PAGE_TEMPLATES.map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => setPageTemplate(t.id)}
+                    onClick={() => {
+                      setPageTemplate(t.id)
+                      savePageSettings({ pageTemplate: t.id })
+                    }}
                     style={{
                       fontSize: "0.8rem",
                       padding: "0.4rem 0.5rem",
@@ -137,7 +344,10 @@ export function InkCanvas() {
                   <button
                     key={p.id}
                     aria-label={p.name}
-                    onClick={() => setPaperPreset(p)}
+                    onClick={() => {
+                      setPaperPreset(p)
+                      savePageSettings({ paperPresetId: p.id })
+                    }}
                     style={{
                       width: 26,
                       height: 26,
@@ -154,7 +364,7 @@ export function InkCanvas() {
         )}
       </div>
 
-      {/* Ink tools */}
+      {/* Tools */}
       <div
         className="card"
         style={{
@@ -171,6 +381,33 @@ export function InkCanvas() {
           justifyContent: "center",
         }}
       >
+        <button
+          aria-label="Caneta"
+          onClick={() => setTool("pen")}
+          style={toolButtonStyle(tool === "pen")}
+        >
+          <Pen size={17} />
+        </button>
+        <button
+          aria-label="Selecionar"
+          onClick={() => setTool("select")}
+          style={toolButtonStyle(tool === "select")}
+        >
+          <MousePointer2 size={17} />
+        </button>
+        <button aria-label="Adicionar texto" onClick={addTextBox} style={toolButtonStyle(false)}>
+          <Type size={17} />
+        </button>
+        <button
+          aria-label="Adicionar foto"
+          onClick={() => fileInputRef.current?.click()}
+          style={toolButtonStyle(false)}
+        >
+          <ImagePlus size={17} />
+        </button>
+
+        <div style={{ width: 1, height: 24, background: "var(--border)" }} />
+
         {INK_COLORS.map((c) => (
           <button
             key={c.value}
@@ -191,22 +428,30 @@ export function InkCanvas() {
         <div style={{ width: 1, height: 24, background: "var(--border)" }} />
         <button
           aria-label="Limpar página"
-          onClick={() => engineRef.current?.clear()}
-          style={{
-            display: "grid",
-            placeItems: "center",
-            width: 32,
-            height: 32,
-            borderRadius: "0.5rem",
-            background: "transparent",
-            border: "none",
-            color: "var(--muted)",
-            flexShrink: 0,
+          onClick={() => {
+            engineRef.current?.clear()
+            strokesRef.current.forEach((s) => remove("strokes", s.id))
+            strokesRef.current = []
           }}
+          style={toolButtonStyle(false)}
         >
           <Eraser size={18} />
         </button>
       </div>
     </div>
   )
+}
+
+function toolButtonStyle(active: boolean): React.CSSProperties {
+  return {
+    display: "grid",
+    placeItems: "center",
+    width: 32,
+    height: 32,
+    borderRadius: "0.5rem",
+    background: active ? "color-mix(in srgb, var(--accent) 16%, transparent)" : "transparent",
+    border: "none",
+    color: active ? "var(--accent-strong)" : "var(--muted)",
+    flexShrink: 0,
+  }
 }
