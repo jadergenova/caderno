@@ -1,12 +1,25 @@
-import { auth } from "@/lib/auth"
+import { InkCanvas } from "@/components/ink-canvas"
 
-export default async function NotebooksPage() {
-  const session = await auth()
-
+export default function NotebooksPage() {
   return (
-    <main style={{ padding: 24 }}>
-      <h1>Meus cadernos</h1>
-      <p>Olá, {session?.user?.name}. A estante de cadernos entra na próxima fase.</p>
-    </main>
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        padding: "1.5rem",
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          boxShadow: "0 20px 45px -20px var(--shadow)",
+          borderRadius: "0.9rem",
+          overflow: "hidden",
+        }}
+      >
+        <InkCanvas />
+      </div>
+    </div>
   )
 }

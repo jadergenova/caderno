@@ -33,23 +33,32 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12, width: 280 }}>
-      <h1>Caderno</h1>
-      <input
-        placeholder="Usuário"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-        autoComplete="username"
-      />
-      <input
-        placeholder="Senha"
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        autoComplete="current-password"
-      />
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      <button type="submit" disabled={loading}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: "0.85rem" }}>
+      <div style={{ display: "grid", gap: "0.3rem" }}>
+        <label style={{ fontSize: "0.8rem", color: "var(--muted)" }}>Usuário</label>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+          autoFocus
+        />
+      </div>
+
+      <div style={{ display: "grid", gap: "0.3rem" }}>
+        <label style={{ fontSize: "0.8rem", color: "var(--muted)" }}>Senha</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+      </div>
+
+      {error && (
+        <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--accent-strong)" }}>{error}</p>
+      )}
+
+      <button type="submit" className="btn-primary" disabled={loading} style={{ marginTop: "0.4rem" }}>
         {loading ? "Entrando..." : "Entrar"}
       </button>
     </form>

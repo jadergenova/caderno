@@ -1,7 +1,20 @@
 import type { Metadata, Viewport } from "next"
+import { Fraunces, Inter } from "next/font/google"
 import "./globals.css"
 import { Providers } from "./providers"
 import { RegisterServiceWorker } from "./register-sw"
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["500", "600"],
+  style: ["normal", "italic"],
+})
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+})
 
 export const metadata: Metadata = {
   title: "Caderno",
@@ -25,7 +38,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={`${fraunces.variable} ${inter.variable}`}>
       <body>
         <Providers>{children}</Providers>
         <RegisterServiceWorker />
