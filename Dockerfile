@@ -37,4 +37,4 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && (npm run db:seed || true) && node server.js"]
