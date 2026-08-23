@@ -3,12 +3,14 @@ export type InkPoint = { x: number; y: number }
 export type InkEngineOptions = {
   color: string
   lineWidth: number
+  allowFingerDrawing?: boolean
   onStrokeEnd?: (points: InkPoint[]) => void
 }
 
 export type InkEngineHandle = {
   setColor(color: string): void
   setLineWidth(width: number): void
+  setAllowFingerDrawing(allow: boolean): void
   clear(): void
   destroy(): void
 }
@@ -54,11 +56,6 @@ export function renderStroke(
   }
 }
 
-// Palm-rejection heuristic: a real Apple Pencil always reports pointerType
-// "pen". Touch is only allowed to draw as a fallback when no pen has been
-// seen recently, so a resting hand doesn't fight an active pen stroke.
-const PEN_GRACE_MS = 400
-
 export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOptions): InkEngineHandle {
   const ctx2d = canvas.getContext("2d")
   if (!ctx2d) throw new Error("Canvas 2D context not available")
@@ -69,8 +66,8 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
   let lastDrawnIndex = 0
   let drawing = false
   let activePointerId: number | null = null
+  let activePointerType: string | null = null
   let rafScheduled = false
-  let lastPenActivity = 0
 
   function toLocalPoint(e: PointerEvent): InkPoint {
     const rect = canvas.getBoundingClientRect()
@@ -121,20 +118,60 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
     lastDrawnIndex = pts.length - 1
   }
 
+  // Palm rejection: a real Apple Pencil always reports pointerType "pen",
+  // which always wins. A bare touch is almost always a resting palm — on a
+  // device with pen support the palm typically lands at the same time as
+  // (or just before) the pen tip, so "no pen seen very recently" is NOT a
+  // safe signal to let touch draw. Touch only draws when the user opts in
+  // via "modo dedo" (no pencil available).
   function shouldStartStroke(e: PointerEvent): boolean {
     if (e.pointerType === "pen" || e.pointerType === "mouse") return true
-    if (e.pointerType === "touch") return Date.now() - lastPenActivity > PEN_GRACE_MS
+    if (e.pointerType === "touch") return options.allowFingerDrawing === true
     return false
   }
 
-  function onPointerDown(e: PointerEvent) {
-    if (activePointerId !== null || !shouldStartStroke(e)) return
+  // setPointerCapture/releasePointerCapture can throw (e.g. the pointer was
+  // already implicitly released). Never let that leave activePointerId
+  // stuck, or every future stroke would be silently ignored until reload.
+  function safeReleaseCapture(pointerId: number) {
+    try {
+      canvas.releasePointerCapture(pointerId)
+    } catch {
+      // ignored — pointer was already released
+    }
+  }
 
-    if (e.pointerType === "pen") lastPenActivity = Date.now()
+  function cancelActiveStroke() {
+    if (activePointerId !== null) safeReleaseCapture(activePointerId)
+    drawing = false
+    activePointerId = null
+    activePointerType = null
+    currentPoints = []
+    pendingPoints = []
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    if (activePointerId !== null) {
+      // A real pencil touching down always preempts an in-progress finger
+      // stroke (relevant when "modo dedo" was on and the user grabs the pen).
+      if (e.pointerType === "pen" && activePointerType === "touch") {
+        cancelActiveStroke()
+      } else {
+        return
+      }
+    }
+
+    if (!shouldStartStroke(e)) return
 
     activePointerId = e.pointerId
+    activePointerType = e.pointerType
     drawing = true
-    canvas.setPointerCapture(e.pointerId)
+    try {
+      canvas.setPointerCapture(e.pointerId)
+    } catch {
+      // Drawing still works without capture — it's just less reliable if
+      // the pointer strays outside the canvas mid-stroke.
+    }
     currentPoints = [toLocalPoint(e)]
     pendingPoints = []
     lastDrawnIndex = 0
@@ -143,7 +180,6 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
 
   function onPointerMove(e: PointerEvent) {
     if (!drawing || e.pointerId !== activePointerId) return
-    if (e.pointerType === "pen") lastPenActivity = Date.now()
 
     const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e]
     for (const ev of events.length ? events : [e]) {
@@ -156,9 +192,10 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
   function endStroke(e: PointerEvent) {
     if (e.pointerId !== activePointerId) return
     renderPending()
-    canvas.releasePointerCapture(e.pointerId)
+    safeReleaseCapture(e.pointerId)
     drawing = false
     activePointerId = null
+    activePointerType = null
     if (currentPoints.length > 1) options.onStrokeEnd?.(currentPoints)
     currentPoints = []
   }
@@ -168,12 +205,22 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
   canvas.addEventListener("pointerup", endStroke)
   canvas.addEventListener("pointercancel", endStroke)
 
+  // Backup net: if pointer capture silently failed (or isn't honored) and
+  // the pointer is released outside the canvas, the listeners above would
+  // never see it, leaving activePointerId stuck forever. window-level
+  // listeners catch that; endStroke already no-ops for unrelated pointers.
+  window.addEventListener("pointerup", endStroke)
+  window.addEventListener("pointercancel", endStroke)
+
   return {
     setColor(color) {
       options.color = color
     },
     setLineWidth(width) {
       options.lineWidth = width
+    },
+    setAllowFingerDrawing(allow) {
+      options.allowFingerDrawing = allow
     },
     clear() {
       context.clearRect(0, 0, canvas.width, canvas.height)
@@ -183,6 +230,8 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
       canvas.removeEventListener("pointermove", onPointerMove)
       canvas.removeEventListener("pointerup", endStroke)
       canvas.removeEventListener("pointercancel", endStroke)
+      window.removeEventListener("pointerup", endStroke)
+      window.removeEventListener("pointercancel", endStroke)
     },
   }
 }

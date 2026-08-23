@@ -49,6 +49,9 @@ export function InkCanvas({ pageId }: { pageId: string }) {
   colorRef.current = color
 
   const [tool, setTool] = useState<Tool>("pen")
+  const [fingerDrawing, setFingerDrawing] = useState(false)
+  const fingerDrawingRef = useRef(fingerDrawing)
+  fingerDrawingRef.current = fingerDrawing
   const [paperPreset, setPaperPreset] = useState<PaperPreset>(PAPER_PRESETS[0])
   const [pageTemplate, setPageTemplate] = useState<PageTemplate>("ruled")
   const [pageMenuOpen, setPageMenuOpen] = useState(false)
@@ -119,19 +122,34 @@ export function InkCanvas({ pageId }: { pageId: string }) {
     const ctx = canvas?.getContext("2d")
     if (!canvas || !ctx) return
 
-    function resize() {
-      const rect = canvas!.getBoundingClientRect()
+    let lastWidth = 0
+    let lastHeight = 0
+
+    // Ignores transitional zero/near-zero layout passes (e.g. before the
+    // flex chain settles on first mount) and no-ops when the size hasn't
+    // actually changed, since setting canvas.width/height itself can
+    // trigger another ResizeObserver callback.
+    function applySize(cssWidth: number, cssHeight: number) {
+      if (cssWidth < 2 || cssHeight < 2) return
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      canvas!.width = Math.max(1, Math.round(rect.width * dpr))
-      canvas!.height = Math.max(1, Math.round(rect.height * dpr))
+      const w = Math.round(cssWidth * dpr)
+      const h = Math.round(cssHeight * dpr)
+      if (w === lastWidth && h === lastHeight) return
+      lastWidth = w
+      lastHeight = h
+      canvas!.width = w
+      canvas!.height = h
       ctx!.scale(dpr, dpr)
       replayAll()
     }
 
-    resize()
+    const initialRect = canvas.getBoundingClientRect()
+    applySize(initialRect.width, initialRect.height)
+
     const engine = attachInkEngine(canvas, {
       color: colorRef.current,
       lineWidth: 2.5,
+      allowFingerDrawing: fingerDrawingRef.current,
       onStrokeEnd: (points) => {
         const stroke = createStroke(pageId, colorRef.current, 2.5, points)
         strokesRef.current = [...strokesRef.current, stroke]
@@ -140,7 +158,14 @@ export function InkCanvas({ pageId }: { pageId: string }) {
     })
     engineRef.current = engine
 
-    const observer = new ResizeObserver(resize)
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const boxSize = entry.contentBoxSize
+      const box = Array.isArray(boxSize) ? boxSize[0] : boxSize
+      if (box) applySize(box.inlineSize, box.blockSize)
+      else applySize(entry.contentRect.width, entry.contentRect.height)
+    })
     observer.observe(canvas)
 
     return () => {
@@ -153,6 +178,10 @@ export function InkCanvas({ pageId }: { pageId: string }) {
   useEffect(() => {
     engineRef.current?.setColor(color)
   }, [color])
+
+  useEffect(() => {
+    engineRef.current?.setAllowFingerDrawing(fingerDrawing)
+  }, [fingerDrawing])
 
   function savePageSettings(patch: Partial<Page>) {
     get<Page>("pages", pageId).then((page) => {
@@ -360,6 +389,31 @@ export function InkCanvas({ pageId }: { pageId: string }) {
                 ))}
               </div>
             </div>
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "0.8rem",
+                color: "var(--ink)",
+                cursor: "pointer",
+                paddingTop: "0.2rem",
+                borderTop: "1px solid var(--border)",
+              }}
+            >
+              <span>
+                Desenhar com o dedo
+                <br />
+                <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>sem caneta</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={fingerDrawing}
+                onChange={(e) => setFingerDrawing(e.target.checked)}
+                style={{ width: "auto" }}
+              />
+            </label>
           </div>
         )}
       </div>
