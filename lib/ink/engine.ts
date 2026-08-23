@@ -1,16 +1,21 @@
 export type InkPoint = { x: number; y: number }
 
+export type InkEngineMode = "draw" | "erase"
+
 export type InkEngineOptions = {
   color: string
   lineWidth: number
   allowFingerDrawing?: boolean
+  mode?: InkEngineMode
   onStrokeEnd?: (points: InkPoint[]) => void
+  onErase?: (point: InkPoint) => void
 }
 
 export type InkEngineHandle = {
   setColor(color: string): void
   setLineWidth(width: number): void
   setAllowFingerDrawing(allow: boolean): void
+  setMode(mode: InkEngineMode): void
   clear(): void
   destroy(): void
 }
@@ -172,31 +177,42 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
       // Drawing still works without capture — it's just less reliable if
       // the pointer strays outside the canvas mid-stroke.
     }
-    currentPoints = [toLocalPoint(e)]
-    pendingPoints = []
-    lastDrawnIndex = 0
+
+    if (options.mode === "erase") {
+      options.onErase?.(toLocalPoint(e))
+    } else {
+      currentPoints = [toLocalPoint(e)]
+      pendingPoints = []
+      lastDrawnIndex = 0
+    }
     e.preventDefault()
   }
 
   function onPointerMove(e: PointerEvent) {
     if (!drawing || e.pointerId !== activePointerId) return
 
-    const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e]
-    for (const ev of events.length ? events : [e]) {
-      pendingPoints.push(toLocalPoint(ev as PointerEvent))
+    const raw = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e]
+    const events = raw.length ? raw : [e]
+
+    if (options.mode === "erase") {
+      for (const ev of events) options.onErase?.(toLocalPoint(ev as PointerEvent))
+    } else {
+      for (const ev of events) pendingPoints.push(toLocalPoint(ev as PointerEvent))
+      scheduleFrame()
     }
-    scheduleFrame()
     e.preventDefault()
   }
 
   function endStroke(e: PointerEvent) {
     if (e.pointerId !== activePointerId) return
-    renderPending()
+    if (options.mode !== "erase") {
+      renderPending()
+      if (currentPoints.length > 1) options.onStrokeEnd?.(currentPoints)
+    }
     safeReleaseCapture(e.pointerId)
     drawing = false
     activePointerId = null
     activePointerType = null
-    if (currentPoints.length > 1) options.onStrokeEnd?.(currentPoints)
     currentPoints = []
   }
 
@@ -221,6 +237,9 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
     },
     setAllowFingerDrawing(allow) {
       options.allowFingerDrawing = allow
+    },
+    setMode(mode) {
+      options.mode = mode
     },
     clear() {
       context.clearRect(0, 0, canvas.width, canvas.height)

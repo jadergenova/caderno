@@ -36,7 +36,9 @@ const INK_COLORS = [
   { name: "Creme", value: "#f7f1e3" },
 ]
 
-type Tool = "pen" | "select"
+type Tool = "pen" | "select" | "eraser"
+
+const ERASER_RADIUS = 14
 
 export function InkCanvas({ pageId }: { pageId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -49,6 +51,8 @@ export function InkCanvas({ pageId }: { pageId: string }) {
   colorRef.current = color
 
   const [tool, setTool] = useState<Tool>("pen")
+  const toolRef = useRef(tool)
+  toolRef.current = tool
   const [fingerDrawing, setFingerDrawing] = useState(false)
   const fingerDrawingRef = useRef(fingerDrawing)
   fingerDrawingRef.current = fingerDrawing
@@ -117,6 +121,21 @@ export function InkCanvas({ pageId }: { pageId: string }) {
     }
   }
 
+  // Removes only the strokes actually touched by the eraser's path, instead
+  // of wiping the whole page. Checking raw sample points (not full segment
+  // distance) is a good enough approximation given how densely pointermove
+  // samples a stroke.
+  function eraseAt(point: { x: number; y: number }) {
+    const hit = strokesRef.current.filter((s) =>
+      s.points.some((p) => Math.hypot(p.x - point.x, p.y - point.y) < ERASER_RADIUS)
+    )
+    if (hit.length === 0) return
+    const hitIds = new Set(hit.map((s) => s.id))
+    strokesRef.current = strokesRef.current.filter((s) => !hitIds.has(s.id))
+    hit.forEach((s) => remove("strokes", s.id))
+    replayAll()
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext("2d")
@@ -150,11 +169,13 @@ export function InkCanvas({ pageId }: { pageId: string }) {
       color: colorRef.current,
       lineWidth: 2.5,
       allowFingerDrawing: fingerDrawingRef.current,
+      mode: toolRef.current === "eraser" ? "erase" : "draw",
       onStrokeEnd: (points) => {
         const stroke = createStroke(pageId, colorRef.current, 2.5, points)
         strokesRef.current = [...strokesRef.current, stroke]
         put("strokes", stroke)
       },
+      onErase: (point) => eraseAt(point),
     })
     engineRef.current = engine
 
@@ -182,6 +203,10 @@ export function InkCanvas({ pageId }: { pageId: string }) {
   useEffect(() => {
     engineRef.current?.setAllowFingerDrawing(fingerDrawing)
   }, [fingerDrawing])
+
+  useEffect(() => {
+    engineRef.current?.setMode(tool === "eraser" ? "erase" : "draw")
+  }, [tool])
 
   function savePageSettings(patch: Partial<Page>) {
     get<Page>("pages", pageId).then((page) => {
@@ -302,7 +327,8 @@ export function InkCanvas({ pageId }: { pageId: string }) {
           height: "100%",
           background: "transparent",
           touchAction: "none",
-          pointerEvents: tool === "pen" ? "auto" : "none",
+          cursor: tool === "eraser" ? "cell" : "default",
+          pointerEvents: tool === "pen" || tool === "eraser" ? "auto" : "none",
         }}
       />
 
@@ -414,6 +440,27 @@ export function InkCanvas({ pageId }: { pageId: string }) {
                 style={{ width: "auto" }}
               />
             </label>
+
+            <button
+              onClick={() => {
+                if (!window.confirm("Apagar todos os traços desta página? Não dá para desfazer.")) return
+                engineRef.current?.clear()
+                strokesRef.current.forEach((s) => remove("strokes", s.id))
+                strokesRef.current = []
+              }}
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--accent-strong)",
+                background: "transparent",
+                border: "none",
+                textAlign: "left",
+                padding: 0,
+                borderTop: "1px solid var(--border)",
+                paddingTop: "0.6rem",
+              }}
+            >
+              Limpar página inteira
+            </button>
           </div>
         )}
       </div>
@@ -449,6 +496,13 @@ export function InkCanvas({ pageId }: { pageId: string }) {
         >
           <MousePointer2 size={17} />
         </button>
+        <button
+          aria-label="Borracha"
+          onClick={() => setTool("eraser")}
+          style={toolButtonStyle(tool === "eraser")}
+        >
+          <Eraser size={17} />
+        </button>
         <button aria-label="Adicionar texto" onClick={addTextBox} style={toolButtonStyle(false)}>
           <Type size={17} />
         </button>
@@ -479,18 +533,6 @@ export function InkCanvas({ pageId }: { pageId: string }) {
             }}
           />
         ))}
-        <div style={{ width: 1, height: 24, background: "var(--border)" }} />
-        <button
-          aria-label="Limpar página"
-          onClick={() => {
-            engineRef.current?.clear()
-            strokesRef.current.forEach((s) => remove("strokes", s.id))
-            strokesRef.current = []
-          }}
-          style={toolButtonStyle(false)}
-        >
-          <Eraser size={18} />
-        </button>
       </div>
     </div>
   )
