@@ -58,6 +58,26 @@ body {
   color: var(--ink);
 }
 
+/* A resting hand grazing any text in the UI (the header, panel labels...)
+   triggers iOS Safari's native text-selection loupe/callout, which then
+   sits on top of everything and eats touches until dismissed — this reads
+   as "the hand is blocking/selecting stuff", not as stray ink. Disable
+   selection and the long-press callout app-wide, and explicitly restore
+   them only where real text editing happens. */
+* {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 h1,
 h2,
 h3,
