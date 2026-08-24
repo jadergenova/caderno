@@ -5,6 +5,9 @@ export type InkEngineMode = "draw" | "erase"
 export type InkEngineOptions = {
   color: string
   lineWidth: number
+  opacity?: number
+  cap?: CanvasLineCap
+  join?: CanvasLineJoin
   allowFingerDrawing?: boolean
   mode?: InkEngineMode
   onStrokeEnd?: (points: InkPoint[]) => void
@@ -14,6 +17,7 @@ export type InkEngineOptions = {
 export type InkEngineHandle = {
   setColor(color: string): void
   setLineWidth(width: number): void
+  setStrokeStyle(style: { opacity: number; cap: CanvasLineCap; join: CanvasLineJoin }): void
   setAllowFingerDrawing(allow: boolean): void
   setMode(mode: InkEngineMode): void
   clear(): void
@@ -31,20 +35,25 @@ export function renderStroke(
   ctx: CanvasRenderingContext2D,
   points: InkPoint[],
   color: string,
-  lineWidth: number
+  lineWidth: number,
+  opacity = 1,
+  cap: CanvasLineCap = "round",
+  join: CanvasLineJoin = "round"
 ) {
   if (points.length < 2) return
 
   ctx.strokeStyle = color
   ctx.lineWidth = lineWidth
-  ctx.lineCap = "round"
-  ctx.lineJoin = "round"
+  ctx.globalAlpha = opacity
+  ctx.lineCap = cap
+  ctx.lineJoin = join
 
   if (points.length === 2) {
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
     ctx.lineTo(points[1].x, points[1].y)
     ctx.stroke()
+    ctx.globalAlpha = 1
     return
   }
 
@@ -59,6 +68,7 @@ export function renderStroke(
     ctx.quadraticCurveTo(p1.x, p1.y, mid2.x, mid2.y)
     ctx.stroke()
   }
+  ctx.globalAlpha = 1
 }
 
 export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOptions): InkEngineHandle {
@@ -95,8 +105,9 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
     const pts = currentPoints
     context.strokeStyle = options.color
     context.lineWidth = options.lineWidth
-    context.lineCap = "round"
-    context.lineJoin = "round"
+    context.globalAlpha = options.opacity ?? 1
+    context.lineCap = options.cap ?? "round"
+    context.lineJoin = options.join ?? "round"
 
     if (pts.length < 3) {
       if (pts.length === 2 && lastDrawnIndex === 0) {
@@ -105,6 +116,7 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
         context.lineTo(pts[1].x, pts[1].y)
         context.stroke()
       }
+      context.globalAlpha = 1
       return
     }
 
@@ -121,6 +133,7 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
       context.stroke()
     }
     lastDrawnIndex = pts.length - 1
+    context.globalAlpha = 1
   }
 
   // Palm rejection: a real Apple Pencil always reports pointerType "pen",
@@ -234,6 +247,11 @@ export function attachInkEngine(canvas: HTMLCanvasElement, options: InkEngineOpt
     },
     setLineWidth(width) {
       options.lineWidth = width
+    },
+    setStrokeStyle(style) {
+      options.opacity = style.opacity
+      options.cap = style.cap
+      options.join = style.join
     },
     setAllowFingerDrawing(allow) {
       options.allowFingerDrawing = allow

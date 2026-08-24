@@ -20,6 +20,7 @@ export type Stroke = {
   pageId: string
   color: string
   lineWidth: number
+  penStyle: string
   points: { x: number; y: number }[]
   createdAt: number
 }
@@ -76,9 +77,10 @@ export function createStroke(
   pageId: string,
   color: string,
   lineWidth: number,
+  penStyle: string,
   points: { x: number; y: number }[]
 ): Stroke {
-  return { id: uuid(), pageId, color, lineWidth, points, createdAt: Date.now() }
+  return { id: uuid(), pageId, color, lineWidth, penStyle, points, createdAt: Date.now() }
 }
 
 export function createTextBox(pageId: string, x: number, y: number): TextBox {

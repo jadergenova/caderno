@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Eraser, ImagePlus, LayoutGrid, MousePointer2, Pen, Type } from "lucide-react"
+import { Eraser, Highlighter, ImagePlus, LayoutGrid, MousePointer2, Pen, Pencil, PenLine, Type } from "lucide-react"
 import { attachInkEngine, renderStroke, type InkEngineHandle } from "@/lib/ink/engine"
 import {
   PAGE_TEMPLATES,
@@ -10,6 +10,7 @@ import {
   type PageTemplate,
   type PaperPreset,
 } from "@/lib/ink/page-background"
+import { PEN_STYLES, THICKNESS_LEVELS, getPenStyle, getThickness } from "@/lib/ink/pen-styles"
 import { get, getAllByIndex, put, remove } from "@/lib/ink/db"
 import {
   createAsset,
@@ -27,14 +28,26 @@ import { ImageObjectView } from "@/components/image-object"
 
 const INK_COLORS = [
   { name: "Tinta", value: "#2a2420" },
+  { name: "Cinza", value: "#6b6259" },
   { name: "Azul", value: "#2f4b7c" },
-  { name: "Vermelho", value: "#a63b32" },
+  { name: "Ciano", value: "#2b7a8c" },
   { name: "Verde", value: "#3d6b4f" },
-  { name: "Roxo", value: "#6b4c8a" },
+  { name: "Oliva", value: "#7a8c3d" },
+  { name: "Amarelo", value: "#c9a227" },
   { name: "Laranja", value: "#c1672f" },
+  { name: "Vermelho", value: "#a63b32" },
   { name: "Rosa", value: "#b5537a" },
+  { name: "Roxo", value: "#6b4c8a" },
+  { name: "Índigo", value: "#3d3d8a" },
+  { name: "Marrom", value: "#6b4530" },
   { name: "Creme", value: "#f7f1e3" },
 ]
+
+const PEN_STYLE_ICONS = { pen: PenLine, pencil: Pencil, highlighter: Highlighter }
+
+function computeLineWidth(penStyleId: string, thicknessId: string): number {
+  return getThickness(thicknessId).base * getPenStyle(penStyleId).widthScale
+}
 
 type Tool = "pen" | "select" | "eraser"
 
@@ -49,6 +62,14 @@ export function InkCanvas({ pageId }: { pageId: string }) {
   const [color, setColor] = useState(INK_COLORS[0].value)
   const colorRef = useRef(color)
   colorRef.current = color
+
+  const [penStyleId, setPenStyleId] = useState(PEN_STYLES[0].id)
+  const penStyleIdRef = useRef(penStyleId)
+  penStyleIdRef.current = penStyleId
+
+  const [thicknessId, setThicknessId] = useState(THICKNESS_LEVELS[1].id)
+  const thicknessIdRef = useRef(thicknessId)
+  thicknessIdRef.current = thicknessId
 
   const [tool, setTool] = useState<Tool>("pen")
   const toolRef = useRef(tool)
@@ -117,7 +138,8 @@ export function InkCanvas({ pageId }: { pageId: string }) {
     if (!canvas || !ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     for (const s of strokesRef.current) {
-      renderStroke(ctx, s.points, s.color, s.lineWidth)
+      const style = getPenStyle(s.penStyle)
+      renderStroke(ctx, s.points, s.color, s.lineWidth, style.opacity, style.cap, style.join)
     }
   }
 
@@ -165,13 +187,23 @@ export function InkCanvas({ pageId }: { pageId: string }) {
     const initialRect = canvas.getBoundingClientRect()
     applySize(initialRect.width, initialRect.height)
 
+    const initialStyle = getPenStyle(penStyleIdRef.current)
     const engine = attachInkEngine(canvas, {
       color: colorRef.current,
-      lineWidth: 2.5,
+      lineWidth: computeLineWidth(penStyleIdRef.current, thicknessIdRef.current),
+      opacity: initialStyle.opacity,
+      cap: initialStyle.cap,
+      join: initialStyle.join,
       allowFingerDrawing: fingerDrawingRef.current,
       mode: toolRef.current === "eraser" ? "erase" : "draw",
       onStrokeEnd: (points) => {
-        const stroke = createStroke(pageId, colorRef.current, 2.5, points)
+        const stroke = createStroke(
+          pageId,
+          colorRef.current,
+          computeLineWidth(penStyleIdRef.current, thicknessIdRef.current),
+          penStyleIdRef.current,
+          points
+        )
         strokesRef.current = [...strokesRef.current, stroke]
         put("strokes", stroke)
       },
@@ -207,6 +239,12 @@ export function InkCanvas({ pageId }: { pageId: string }) {
   useEffect(() => {
     engineRef.current?.setMode(tool === "eraser" ? "erase" : "draw")
   }, [tool])
+
+  useEffect(() => {
+    const style = getPenStyle(penStyleId)
+    engineRef.current?.setLineWidth(computeLineWidth(penStyleId, thicknessId))
+    engineRef.current?.setStrokeStyle({ opacity: style.opacity, cap: style.cap, join: style.join })
+  }, [penStyleId, thicknessId])
 
   function savePageSettings(patch: Partial<Page>) {
     get<Page>("pages", pageId).then((page) => {
@@ -465,74 +503,133 @@ export function InkCanvas({ pageId }: { pageId: string }) {
         )}
       </div>
 
-      {/* Tools */}
+      {/* Bottom toolbars */}
       <div
-        className="card"
         style={{
           position: "absolute",
           bottom: "1.25rem",
           left: "50%",
           transform: "translateX(-50%)",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          padding: "0.5rem 0.75rem",
           maxWidth: "calc(100% - 2rem)",
-          flexWrap: "wrap",
-          justifyContent: "center",
+          display: "grid",
+          gap: "0.6rem",
+          justifyItems: "center",
         }}
       >
-        <button
-          aria-label="Caneta"
-          onClick={() => setTool("pen")}
-          style={toolButtonStyle(tool === "pen")}
-        >
-          <Pen size={17} />
-        </button>
-        <button
-          aria-label="Selecionar"
-          onClick={() => setTool("select")}
-          style={toolButtonStyle(tool === "select")}
-        >
-          <MousePointer2 size={17} />
-        </button>
-        <button
-          aria-label="Borracha"
-          onClick={() => setTool("eraser")}
-          style={toolButtonStyle(tool === "eraser")}
-        >
-          <Eraser size={17} />
-        </button>
-        <button aria-label="Adicionar texto" onClick={addTextBox} style={toolButtonStyle(false)}>
-          <Type size={17} />
-        </button>
-        <button
-          aria-label="Adicionar foto"
-          onClick={() => fileInputRef.current?.click()}
-          style={toolButtonStyle(false)}
-        >
-          <ImagePlus size={17} />
-        </button>
-
-        <div style={{ width: 1, height: 24, background: "var(--border)" }} />
-
-        {INK_COLORS.map((c) => (
-          <button
-            key={c.value}
-            aria-label={c.name}
-            onClick={() => setColor(c.value)}
+        {tool === "pen" && (
+          <div
+            className="card"
             style={{
-              width: 24,
-              height: 24,
-              borderRadius: "50%",
-              background: c.value,
-              border: color === c.value ? "2px solid var(--accent)" : "2px solid transparent",
-              boxShadow: "0 0 0 1px var(--border)",
-              padding: 0,
-              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.5rem 0.75rem",
+              flexWrap: "wrap",
+              justifyContent: "center",
             }}
-          />
-        ))}
+          >
+            {PEN_STYLES.map((s) => {
+              const Icon = PEN_STYLE_ICONS[s.id]
+              return (
+                <button
+                  key={s.id}
+                  aria-label={`Estilo ${s.name}`}
+                  onClick={() => setPenStyleId(s.id)}
+                  style={toolButtonStyle(penStyleId === s.id)}
+                >
+                  <Icon size={17} />
+                </button>
+              )
+            })}
+
+            <div style={{ width: 1, height: 24, background: "var(--border)" }} />
+
+            {THICKNESS_LEVELS.map((t, i) => (
+              <button
+                key={t.id}
+                aria-label={t.name}
+                onClick={() => setThicknessId(t.id)}
+                style={{
+                  ...toolButtonStyle(thicknessId === t.id),
+                  width: 32,
+                  height: 32,
+                }}
+              >
+                <span
+                  style={{
+                    display: "block",
+                    width: 6 + i * 5,
+                    height: 6 + i * 5,
+                    borderRadius: "50%",
+                    background: "currentColor",
+                  }}
+                />
+              </button>
+            ))}
+
+            <div style={{ width: 1, height: 24, background: "var(--border)" }} />
+
+            {INK_COLORS.map((c) => (
+              <button
+                key={c.value}
+                aria-label={c.name}
+                onClick={() => setColor(c.value)}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: "50%",
+                  background: c.value,
+                  border: color === c.value ? "2px solid var(--accent)" : "2px solid transparent",
+                  boxShadow: "0 0 0 1px var(--border)",
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        <div
+          className="card"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            padding: "0.5rem 0.75rem",
+          }}
+        >
+          <button
+            aria-label="Caneta"
+            onClick={() => setTool("pen")}
+            style={toolButtonStyle(tool === "pen")}
+          >
+            <Pen size={17} />
+          </button>
+          <button
+            aria-label="Selecionar"
+            onClick={() => setTool("select")}
+            style={toolButtonStyle(tool === "select")}
+          >
+            <MousePointer2 size={17} />
+          </button>
+          <button
+            aria-label="Borracha"
+            onClick={() => setTool("eraser")}
+            style={toolButtonStyle(tool === "eraser")}
+          >
+            <Eraser size={17} />
+          </button>
+          <button aria-label="Adicionar texto" onClick={addTextBox} style={toolButtonStyle(false)}>
+            <Type size={17} />
+          </button>
+          <button
+            aria-label="Adicionar foto"
+            onClick={() => fileInputRef.current?.click()}
+            style={toolButtonStyle(false)}
+          >
+            <ImagePlus size={17} />
+          </button>
+        </div>
       </div>
     </div>
   )
