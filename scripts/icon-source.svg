@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#b5502f"/>
+  <rect x="150" y="96" width="216" height="320" rx="26" fill="#fff8ef"/>
+  <circle cx="150" cy="138" r="9" fill="#9c4526"/>
+  <circle cx="150" cy="178" r="9" fill="#9c4526"/>
+  <circle cx="150" cy="218" r="9" fill="#9c4526"/>
+  <circle cx="150" cy="258" r="9" fill="#9c4526"/>
+  <circle cx="150" cy="298" r="9" fill="#9c4526"/>
+  <circle cx="150" cy="338" r="9" fill="#9c4526"/>
+  <circle cx="150" cy="378" r="9" fill="#9c4526"/>
+  <rect x="192" y="150" width="144" height="10" rx="5" fill="#e3d5b8"/>
+  <rect x="192" y="192" width="144" height="10" rx="5" fill="#e3d5b8"/>
+  <rect x="192" y="234" width="100" height="10" rx="5" fill="#e3d5b8"/>
+  <g transform="rotate(45 356 300)">
+    <rect x="332" y="176" width="30" height="216" rx="13" fill="#2a2420"/>
+    <polygon points="332,176 362,176 347,138" fill="#2a2420"/>
+    <rect x="332" y="176" width="30" height="26" fill="#e3d5b8"/>
+  </g>
+</svg>
