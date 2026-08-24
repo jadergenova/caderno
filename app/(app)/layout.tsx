@@ -1,6 +1,7 @@
 import { NotebookPen } from "lucide-react"
 import { auth } from "@/lib/auth"
 import { SignOutButton } from "@/components/sign-out-button"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -24,6 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.9rem" }}>
+          <ThemeToggle />
           <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{session?.user?.name}</span>
           <SignOutButton />
         </div>

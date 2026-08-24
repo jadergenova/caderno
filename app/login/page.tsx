@@ -1,5 +1,6 @@
 import { NotebookPen } from "lucide-react"
 import { LoginForm } from "./client"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function LoginPage() {
   return (
@@ -9,8 +10,13 @@ export default function LoginPage() {
         display: "grid",
         placeItems: "center",
         padding: "1.5rem",
+        position: "relative",
       }}
     >
+      <div style={{ position: "absolute", top: "1rem", right: "1rem" }}>
+        <ThemeToggle />
+      </div>
+
       <div
         className="card"
         style={{
