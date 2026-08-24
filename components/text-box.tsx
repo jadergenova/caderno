@@ -45,6 +45,8 @@ export function TextBoxView({ textBox, interactive, autoFocus, onChange, onCommi
     dragRef.current = null
   }
 
+  const isSticky = textBox.kind === "sticky"
+
   return (
     <div
       style={{
@@ -53,59 +55,79 @@ export function TextBoxView({ textBox, interactive, autoFocus, onChange, onCommi
         top: textBox.y,
         width: textBox.width,
         pointerEvents: interactive ? "auto" : "none",
+        transform: isSticky ? `rotate(${textBox.rotation ?? 0}deg)` : undefined,
       }}
     >
-      {interactive && (
-        <div
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            cursor: "grab",
-            color: "var(--muted)",
-          }}
-        >
-          <GripHorizontal size={14} />
-          <button
-            onClick={() => onDelete(textBox.id)}
-            aria-label="Excluir texto"
-            style={{ background: "none", border: "none", color: "var(--muted)", padding: 2, cursor: "pointer" }}
+      <div
+        style={
+          isSticky
+            ? {
+                background: textBox.noteColor,
+                borderRadius: "0.2rem",
+                padding: "0.5rem 0.5rem 0.7rem",
+                boxShadow: "0 8px 16px -6px var(--shadow)",
+              }
+            : undefined
+        }
+      >
+        {interactive && (
+          <div
+            onPointerDown={onDragStart}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              cursor: "grab",
+              color: isSticky ? "rgba(0,0,0,0.45)" : "var(--muted)",
+            }}
           >
-            <Trash2 size={13} />
-          </button>
-        </div>
-      )}
-      <textarea
-        ref={taRef}
-        defaultValue={textBox.text}
-        readOnly={!interactive}
-        rows={1}
-        onInput={(e) => {
-          const el = e.currentTarget
-          el.style.height = "auto"
-          el.style.height = `${el.scrollHeight}px`
-        }}
-        onBlur={(e) => {
-          onChange(textBox.id, { text: e.currentTarget.value })
-          onCommit(textBox.id)
-        }}
-        style={{
-          width: "100%",
-          resize: "none",
-          border: interactive ? "1px dashed var(--border)" : "none",
-          borderRadius: "0.3rem",
-          background: "transparent",
-          color: textBox.color,
-          fontSize: "1rem",
-          fontFamily: "inherit",
-          lineHeight: 1.4,
-          padding: "0.25rem 0.4rem",
-          overflow: "hidden",
-        }}
-      />
+            <GripHorizontal size={14} />
+            <button
+              onClick={() => onDelete(textBox.id)}
+              aria-label={isSticky ? "Excluir post-it" : "Excluir texto"}
+              style={{
+                background: "none",
+                border: "none",
+                color: "inherit",
+                padding: 2,
+                cursor: "pointer",
+              }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
+        <textarea
+          ref={taRef}
+          defaultValue={textBox.text}
+          readOnly={!interactive}
+          rows={1}
+          onInput={(e) => {
+            const el = e.currentTarget
+            el.style.height = "auto"
+            el.style.height = `${el.scrollHeight}px`
+          }}
+          onBlur={(e) => {
+            onChange(textBox.id, { text: e.currentTarget.value })
+            onCommit(textBox.id)
+          }}
+          style={{
+            width: "100%",
+            resize: "none",
+            border: !isSticky && interactive ? "1px dashed var(--border)" : "none",
+            borderRadius: "0.3rem",
+            background: "transparent",
+            color: textBox.color,
+            fontSize: isSticky ? "0.9rem" : "1rem",
+            fontFamily: "inherit",
+            lineHeight: 1.4,
+            padding: "0.25rem 0.4rem",
+            overflow: "hidden",
+          }}
+        />
+      </div>
     </div>
   )
 }

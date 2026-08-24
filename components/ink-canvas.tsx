@@ -1,7 +1,18 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Eraser, Highlighter, ImagePlus, LayoutGrid, MousePointer2, Pen, Pencil, PenLine, Type } from "lucide-react"
+import {
+  Eraser,
+  Highlighter,
+  ImagePlus,
+  LayoutGrid,
+  MousePointer2,
+  Pen,
+  Pencil,
+  PenLine,
+  StickyNote,
+  Type,
+} from "lucide-react"
 import { attachInkEngine, renderStroke, type InkEngineHandle } from "@/lib/ink/engine"
 import {
   PAGE_TEMPLATES,
@@ -16,6 +27,7 @@ import {
   createAsset,
   createImageObject,
   createStroke,
+  createStickyNote,
   createTextBox,
   type Asset,
   type ImageObject,
@@ -275,6 +287,15 @@ export function InkCanvas({ pageId }: { pageId: string }) {
     setTextBoxes((prev) => [...prev, box])
     put("textboxes", box)
     setLastCreatedId(box.id)
+    setTool("select")
+  }
+
+  function addStickyNote() {
+    const n = textBoxes.length
+    const note = createStickyNote(pageId, 60 + (n % 5) * 22, 60 + (n % 5) * 22)
+    setTextBoxes((prev) => [...prev, note])
+    put("textboxes", note)
+    setLastCreatedId(note.id)
     setTool("select")
   }
 
@@ -621,6 +642,9 @@ export function InkCanvas({ pageId }: { pageId: string }) {
           </button>
           <button aria-label="Adicionar texto" onClick={addTextBox} style={toolButtonStyle(false)}>
             <Type size={17} />
+          </button>
+          <button aria-label="Adicionar post-it" onClick={addStickyNote} style={toolButtonStyle(false)}>
+            <StickyNote size={17} />
           </button>
           <button
             aria-label="Adicionar foto"
